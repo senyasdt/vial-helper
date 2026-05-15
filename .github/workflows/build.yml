@@ -12,7 +12,49 @@ permissions:
   contents: write
 
 jobs:
+  validate-installers:
+    name: validate-installers
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate POSIX installer syntax
+        run: |
+          set -euo pipefail
+          sh -n scripts/install/install-macos.sh
+          sh -n scripts/install/install-linux.sh
+          sh -n scripts/install/uninstall-macos.sh
+          sh -n scripts/install/uninstall-linux.sh
+
+      - name: Validate installer dry-runs
+        run: |
+          set -euo pipefail
+          tmpdir="$(mktemp -d)"
+          cp scripts/install/install-linux.sh "$tmpdir/"
+          cp scripts/install/install-macos.sh "$tmpdir/"
+          cp scripts/install/uninstall-linux.sh "$tmpdir/"
+          cp scripts/install/uninstall-macos.sh "$tmpdir/"
+          touch "$tmpdir/vial-helperd"
+          chmod +x "$tmpdir/vial-helperd" "$tmpdir/install-linux.sh" "$tmpdir/install-macos.sh" "$tmpdir/uninstall-linux.sh" "$tmpdir/uninstall-macos.sh"
+          XDG_CONFIG_HOME="$tmpdir/xdg" HOME="$tmpdir/home" "$tmpdir/install-linux.sh" --dry-run
+          HOME="$tmpdir/home" "$tmpdir/install-macos.sh" --dry-run
+          XDG_CONFIG_HOME="$tmpdir/xdg" HOME="$tmpdir/home" "$tmpdir/uninstall-linux.sh" --dry-run
+          HOME="$tmpdir/home" "$tmpdir/uninstall-macos.sh" --dry-run
+
+      - name: Validate Windows installer dry-run
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:RUNNER_TEMP "vial-helper-installer-check"
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          Copy-Item "scripts/install/install-windows.bat" "$tmp/install-windows.bat"
+          Copy-Item "scripts/install/uninstall-windows.bat" "$tmp/uninstall-windows.bat"
+          New-Item -ItemType File -Force -Path "$tmp/vial-helperd.exe" | Out-Null
+          cmd /c "`"$tmp\install-windows.bat`" --dry-run"
+          cmd /c "`"$tmp\uninstall-windows.bat`" --dry-run"
+
   build:
+    needs: validate-installers
     name: ${{ matrix.artifact_name }}
     runs-on: ${{ matrix.runs_on }}
     strategy:
@@ -104,6 +146,14 @@ jobs:
           mkdir -p "${staging}"
           cp "dist/${{ matrix.binary_name }}" "${staging}/"
           cp README.md "${staging}/"
+          if [[ "${{ matrix.goos }}" == "linux" ]]; then
+            cp scripts/install/install-linux.sh "${staging}/"
+            cp scripts/install/uninstall-linux.sh "${staging}/"
+          else
+            cp scripts/install/install-macos.sh "${staging}/"
+            cp scripts/install/uninstall-macos.sh "${staging}/"
+          fi
+          chmod +x "${staging}/"*.sh
           tar -C dist -czf "dist/${{ matrix.archive_name }}" "${{ matrix.artifact_name }}"
 
       - name: Package Windows artifact
@@ -114,6 +164,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path $staging | Out-Null
           Copy-Item "dist/${{ matrix.binary_name }}" "$staging/${{ matrix.binary_name }}"
           Copy-Item "README.md" "$staging/README.md"
+          Copy-Item "scripts/install/install-windows.bat" "$staging/install-windows.bat"
+          Copy-Item "scripts/install/uninstall-windows.bat" "$staging/uninstall-windows.bat"
           Compress-Archive -Path "$staging/*" -DestinationPath "dist/${{ matrix.archive_name }}" -Force
 
       - name: Upload workflow artifact

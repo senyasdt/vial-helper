@@ -2,189 +2,160 @@
 
 Cross-platform companion daemon for a Vial/QMK macropad with a custom Raw HID helper API.
 
-The daemon reads:
+It reads layer/layout data from firmware and writes:
 
-- active layer state;
-- full dynamic Vial keymap;
-- encoder actions;
-- combos;
-- tap dance entries;
-- macros;
-- key overrides;
-- alt-repeat rules;
-- helper capabilities.
-
-It writes two machine-readable files for widgets and UI helpers:
-
-- `state.json` — fast-changing active layer state;
-- `layout.json` — cached snapshot of the full Vial layout and helper metadata.
+- `state.json` for fast-changing active layer state
+- `layout.json` for the cached full layout snapshot
 
 ## Requirements
 
-The firmware must expose helper Raw HID commands:
+Firmware must expose the helper Raw HID commands used by this daemon (`0x40` through `0x49`).
 
-- `0x40` capabilities;
-- `0x42` layer state;
-- `0x43` encoder action;
-- `0x44` combo entry;
-- `0x45` tap dance entry;
-- `0x46` macros;
-- `0x47` key override entry;
-- `0x48` alt-repeat entry;
-- `0x49` QMK settings entry.
+## Config
 
-## Config location
+`config.toml` is created automatically in the OS user config directory:
 
-The daemon creates `config.toml` automatically in the OS user config directory:
-
-- Windows: `%AppData%\\vial-helper\\config.toml`
+- Windows: `%AppData%\vial-helper\config.toml`
 - macOS: `~/Library/Application Support/vial-helper/config.toml`
 - Linux: `${XDG_CONFIG_HOME:-~/.config}/vial-helper/config.toml`
 
-The JSON outputs are written to the same directory by default.
+`state.json` and `layout.json` are written there by default.
 
-`VIAL_HELPER_CONFIG_DIR` can override the config directory.
+`VIAL_HELPER_CONFIG_DIR` overrides the config directory.
 
-## Build
+## Local Build
 
 Recommended Go toolchain: `1.23.x`.
-This project currently depends on `github.com/sstallion/go-hid v0.15.0`, which did not build locally here with `go1.26.3` on Windows.
-`go-hid` also requires `cgo`, so on Windows local builds should be run with `CGO_ENABLED=1`.
+
+Use the `Makefile`:
 
 ```bash
-go mod tidy
-go build -o dist/vial-helperd ./cmd/vial-helperd
+make build win
+make build linux
+make build macos
 ```
 
-On Windows:
+This creates:
 
-```powershell
-go mod tidy
-$env:CGO_ENABLED="1"
-go build -o dist\\vial-helperd.exe .\\cmd\\vial-helperd
-```
+- `dist/local-windows`
+- `dist/local-linux`
+- `dist/local-macos`
 
-Print the embedded build version:
+Each folder contains the binary plus matching `install-*` and `uninstall-*` scripts.
+
+Notes:
+
+- Windows build target is `windows/amd64`
+- Linux build target is `linux/amd64`
+- macOS build target is `darwin/arm64`
+- `go-hid` requires `cgo`
+- local builds need a working C toolchain with `gcc` available in `PATH`
+- for Windows local builds use `CGO_ENABLED=1`
+
+Print embedded build info:
 
 ```bash
 vial-helperd --version
 ```
 
+## Install
+
+From a release archive or from a locally built `dist/local-*` directory, run the installer that matches the platform:
+
+Linux:
+
+```bash
+./install-linux.sh
+```
+
+macOS:
+
+```bash
+./install-macos.sh
+```
+
+Windows:
+
+```powershell
+.\install-windows.bat
+```
+
+Uninstall with the matching `uninstall-*` script.
+
+The installer expects the binary to be next to the script in the same directory.
+
+Background launch is quiet on all platforms:
+
+- Linux runs as a `systemd --user` service
+- macOS runs as a LaunchAgent
+- Windows runs through a hidden PowerShell wrapper started by Scheduled Task
+
+Error logs:
+
+- Linux: `${XDG_CONFIG_HOME:-~/.config}/vial-helper/daemon.err.log`
+- macOS: `~/Library/Application Support/vial-helper/daemon.err.log`
+- Windows: `%APPDATA%\vial-helper\daemon.err.log`
+
+On each daemon start, a simple rotation keeps one previous file as `daemon.err.log.1` when the current error log grows beyond `256 KB`.
+
 ## Commands
 
-Run daemon:
+Main commands:
+
+- `run`
+- `init`
+- `paths`
+- `refresh-layout`
+- `refresh-now`
+- `doctor`
+- `status`
+- `version`
+
+Examples:
 
 ```bash
 vial-helperd --command run
-```
-
-Create config and print its path:
-
-```bash
-vial-helperd --command init
-```
-
-Print resolved paths:
-
-```bash
-vial-helperd --command paths
-```
-
-Ask a running daemon to refresh `layout.json`:
-
-```bash
-vial-helperd --command refresh-layout
-```
-
-Refresh `layout.json` immediately in a one-shot process:
-
-```bash
-vial-helperd --command refresh-now
-```
-
-Run an interactive health check that replaces the old Python probe script:
-
-```bash
 vial-helperd --command doctor
-```
-
-Print the same health check plus the decoded full layout snapshot:
-
-```bash
-vial-helperd --command doctor --raw
-```
-
-Print the embedded build metadata:
-
-```bash
+vial-helperd --command status
 vial-helperd --command version
 ```
 
-Inspect the latest written `state.json` / `layout.json` files without talking to the device:
+Use `--raw` with `doctor` to print the decoded layout snapshot too.
 
-```bash
-vial-helperd --command status
-```
+## CI And Releases
 
-Use a custom config file:
+GitHub Actions in [`.github/workflows/build.yml`](.github/workflows/build.yml):
 
-```bash
-vial-helperd --config /path/to/config.toml --command run
-```
+- runs on every push to `master`
+- runs on tags `v*`
+- builds:
+  - Windows x64
+  - Linux x64
+  - macOS ARM64
+- validates install/uninstall scripts
+- uploads build artifacts
+- publishes release assets on tag pushes
 
-## GitHub Actions CI
+Packaged artifacts include platform-specific install and uninstall scripts.
 
-The repository includes [`.github/workflows/build.yml`](.github/workflows/build.yml), which:
+## Versioning
 
-- runs automatically on every push to `master`;
-- also runs on tags matching `v*` and on manual `workflow_dispatch`;
-- builds platform artifacts for:
-  - Windows x64;
-  - macOS ARM64 (`macos-15`, Apple Silicon runner);
-  - Linux x64;
-- uploads packaged artifacts to the workflow run;
-- publishes the same packaged artifacts to a GitHub Release when the push is a semver tag.
+Suggested release flow:
 
-## Suggested semver flow
+1. Merge work into `master`.
+2. CI produces snapshot artifacts automatically.
+3. Create release tags as `vMAJOR.MINOR.PATCH`.
 
-A simple workflow that stays close to semver:
+Use:
 
-1. Merge regular work into `master`. CI builds snapshot artifacts automatically.
-2. Tag releases as `vMAJOR.MINOR.PATCH`, for example `v0.3.2`.
-3. Use:
-   - `PATCH` for fixes with no intended breaking behavior;
-   - `MINOR` for backward-compatible new commands, fields, or capabilities;
-   - `MAJOR` for breaking CLI/config/JSON/protocol changes.
+- `PATCH` for fixes
+- `MINOR` for backward-compatible features
+- `MAJOR` for breaking CLI, config, JSON, or protocol changes
 
-On `master`, artifacts are versioned automatically as:
+Snapshot builds on `master` use:
 
 ```text
 <last-tag-or-0.1.0>-dev.<github-run-number>+<short-sha>
 ```
 
-Example:
-
-```text
-0.3.2-dev.57+1a2b3c4
-```
-
-On a tag push like `v0.3.3`, the binary embeds exactly `v0.3.3` and the workflow publishes release assets for all target platforms.
-
-## Example `state.json`
-
-```json
-{
-  "label": "BASE",
-  "top": 0,
-  "name": "BASE",
-  "effective": "0",
-  "temp": "—",
-  "default": "0"
-}
-```
-
-## Example consumers
-
-- YASB widget reads `state.json`.
-- Tkinter/desktop overlay reads `layout.json`.
-- A future macOS menu bar app can read the same files.
+Tag builds embed the exact tag version and publish release assets for all target platforms.

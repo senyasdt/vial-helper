@@ -29,6 +29,7 @@ func (d *Daemon) Run() error {
 	}
 
 	var lastState *model.State
+	connected := false
 
 	for {
 		client, err := hidclient.Open(
@@ -44,17 +45,21 @@ func (d *Daemon) Run() error {
 				}
 				lastState = &state
 			}
-			log.Printf("device unavailable: %v", err)
+			if connected || lastState == nil {
+				log.Printf("device unavailable: %v", err)
+			}
+			connected = false
 			time.Sleep(time.Duration(d.Cfg.Polling.ReconnectMS) * time.Millisecond)
 			continue
 		}
 
 		reader := protocol.NewReader(client, d.Cfg)
-		log.Printf("connected to Vial helper device")
+		connected = true
 
 		if err := d.refreshLayout(reader); err != nil {
 			log.Printf("initial layout refresh failed: %v", err)
 			_ = client.Close()
+			connected = false
 			time.Sleep(time.Duration(d.Cfg.Polling.ReconnectMS) * time.Millisecond)
 			continue
 		}
@@ -64,6 +69,7 @@ func (d *Daemon) Run() error {
 				if err := d.refreshLayout(reader); err != nil {
 					log.Printf("layout refresh failed: %v", err)
 					_ = client.Close()
+					connected = false
 					break
 				}
 				d.clearRefreshFlag()
@@ -73,6 +79,7 @@ func (d *Daemon) Run() error {
 			if err != nil {
 				log.Printf("layer read failed: %v", err)
 				_ = client.Close()
+				connected = false
 				break
 			}
 
@@ -110,15 +117,6 @@ func (d *Daemon) refreshLayout(reader *protocol.Reader) error {
 	if err := storage.WriteJSONAtomic(d.Paths.LayoutFile, layout); err != nil {
 		return err
 	}
-	log.Printf(
-		"layout refreshed: layers=%d combos=%d tap_dances=%d macros=%d overrides=%d alt_repeat=%d",
-		layout.LayerCount,
-		len(layout.Combos),
-		len(layout.TapDances),
-		layout.Macros.Count,
-		len(layout.KeyOverrides),
-		len(layout.AltRepeatKeys),
-	)
 	return nil
 }
 

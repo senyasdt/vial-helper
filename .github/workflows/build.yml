@@ -12,8 +12,8 @@ permissions:
   contents: write
 
 jobs:
-  validate-installers:
-    name: validate-installers
+  validate-installers-unix:
+    name: validate-installers-unix
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -42,6 +42,13 @@ jobs:
           XDG_CONFIG_HOME="$tmpdir/xdg" HOME="$tmpdir/home" "$tmpdir/uninstall-linux.sh" --dry-run
           HOME="$tmpdir/home" "$tmpdir/uninstall-macos.sh" --dry-run
 
+  validate-installers-windows:
+    name: validate-installers-windows
+    runs-on: windows-2025
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Validate Windows installer dry-run
         shell: pwsh
         run: |
@@ -50,11 +57,13 @@ jobs:
           Copy-Item "scripts/install/install-windows.bat" "$tmp/install-windows.bat"
           Copy-Item "scripts/install/uninstall-windows.bat" "$tmp/uninstall-windows.bat"
           New-Item -ItemType File -Force -Path "$tmp/vial-helperd.exe" | Out-Null
-          cmd /c "`"$tmp\install-windows.bat`" --dry-run"
-          cmd /c "`"$tmp\uninstall-windows.bat`" --dry-run"
+          cmd.exe /c "`"$tmp\install-windows.bat`" --dry-run"
+          cmd.exe /c "`"$tmp\uninstall-windows.bat`" --dry-run"
 
   build:
-    needs: validate-installers
+    needs:
+      - validate-installers-unix
+      - validate-installers-windows
     name: ${{ matrix.artifact_name }}
     runs-on: ${{ matrix.runs_on }}
     strategy:

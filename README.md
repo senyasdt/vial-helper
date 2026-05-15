@@ -59,6 +59,12 @@ go mod tidy
 go build -o dist\\vial-helperd.exe .\\cmd\\vial-helperd
 ```
 
+Print the embedded build version:
+
+```bash
+vial-helperd --version
+```
+
 ## Commands
 
 Run daemon:
@@ -103,6 +109,12 @@ Print the same health check plus the decoded full layout snapshot:
 vial-helperd --command doctor --raw
 ```
 
+Print the embedded build metadata:
+
+```bash
+vial-helperd --command version
+```
+
 Inspect the latest written `state.json` / `layout.json` files without talking to the device:
 
 ```bash
@@ -114,6 +126,44 @@ Use a custom config file:
 ```bash
 vial-helperd --config /path/to/config.toml --command run
 ```
+
+## GitHub Actions CI
+
+The repository includes [`.github/workflows/build.yml`](.github/workflows/build.yml), which:
+
+- runs automatically on every push to `master`;
+- also runs on tags matching `v*` and on manual `workflow_dispatch`;
+- builds platform artifacts for:
+  - Windows x64;
+  - macOS ARM64 (`macos-15`, Apple Silicon runner);
+  - Linux x64;
+- uploads packaged artifacts to the workflow run;
+- publishes the same packaged artifacts to a GitHub Release when the push is a semver tag.
+
+## Suggested semver flow
+
+A simple workflow that stays close to semver:
+
+1. Merge regular work into `master`. CI builds snapshot artifacts automatically.
+2. Tag releases as `vMAJOR.MINOR.PATCH`, for example `v0.3.2`.
+3. Use:
+   - `PATCH` for fixes with no intended breaking behavior;
+   - `MINOR` for backward-compatible new commands, fields, or capabilities;
+   - `MAJOR` for breaking CLI/config/JSON/protocol changes.
+
+On `master`, artifacts are versioned automatically as:
+
+```text
+<last-tag-or-0.1.0>-dev.<github-run-number>+<short-sha>
+```
+
+Example:
+
+```text
+0.3.2-dev.57+1a2b3c4
+```
+
+On a tag push like `v0.3.3`, the binary embeds exactly `v0.3.3` and the workflow publishes release assets for all target platforms.
 
 ## Example `state.json`
 

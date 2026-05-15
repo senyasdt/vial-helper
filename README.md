@@ -47,6 +47,10 @@ The JSON outputs are written to the same directory by default.
 
 ## Build
 
+Recommended Go toolchain: `1.23.x`.
+This project currently depends on `github.com/sstallion/go-hid v0.15.0`, which did not build locally here with `go1.26.3` on Windows.
+`go-hid` also requires `cgo`, so on Windows local builds should be run with `CGO_ENABLED=1`.
+
 ```bash
 go mod tidy
 go build -o dist/vial-helperd ./cmd/vial-helperd
@@ -56,6 +60,7 @@ On Windows:
 
 ```powershell
 go mod tidy
+$env:CGO_ENABLED="1"
 go build -o dist\\vial-helperd.exe .\\cmd\\vial-helperd
 ```
 
